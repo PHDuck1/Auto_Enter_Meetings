@@ -1,21 +1,29 @@
-from datetime import datetime
-
 import os.path
 import re
+import webbrowser
+
+from datetime import datetime
+from time import sleep
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 
 class CalendarProcessor:
+    meet = {}
 
-    def _get_creds(self):
+    def __init__(self):
+        self.meet = self.get_next_meeting()
+
+    @staticmethod
+    def _get_creds():
+        creds = None
+
         if os.path.exists('token.json'):
             creds = Credentials.from_authorized_user_file('token.json', SCOPES)
         # If there are no (valid) credentials available, let the user log in.
@@ -29,42 +37,68 @@ class CalendarProcessor:
             # Save the credentials for the next run
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
-        
+
         return creds
 
-    def get_link(self, desc: str):
-        """ parse information about meetings, return link to zoom or google meet meeting """
+    @staticmethod
+    def get_link(desc: str):
+        """ parse information about meetings, return link to zoom or google self.meet meeting """
 
-        match = re.search('https:\/\/[-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*', desc)
+        match = re.search(r'https://[-a-zA-Z\d()@:%_+.~#?&/=]*', desc)
 
         if match:
             return match.group(0)
-    
-    def get_next_meetings(self, n: int=1):
-        """ return links to next n meetings """
 
-        service = build('calendar', 'v3', credentials=self._get_creds())
-        now = datetime.utcnow().isoformat() + 'Z'
+    def get_next_meeting(self):
+        """ return meet object with name, date of start and link """
+        try:
+            service = build('calendar', 'v3', credentials=self._get_creds())
+        except:
+            os.remove('token.json')
+            service = build('calendar', 'v3', credentials=self._get_creds())
 
-        # get n upcoming events
-        events_result = service.events().list(calendarId='primary', timeMin=now,
-                                              maxResults=n, singleEvents=True,
-                                              orderBy='startTime').execute()
-        events = events_result.get('items', [])
+        now = datetime.utcnow()
+        start_time = now.isoformat() + 'Z'
 
-        # return list of tuples with name, start time and link to meeting
-        if events:
-            res = []
-            for event in events:
-                name = event['summary']
-                start = event['start'].get('dateTime', event['start'].get('date'))
-                desc = event.get('description', '')
-                link = self.get_link(desc)
-                res.append((name, start, link))
-            return res
+        event_result = service.events().list(calendarId='primary', timeMin=start_time,
+                                             maxResults=1, singleEvents=True,
+                                             orderBy='startTime').execute()
 
-    def get_current_meeting(self):
-        """ return link to meetings which is going on right now """
+        event = event_result.get('items', [])
 
-        return 'meet'
-    
+        if event:
+            event = event[0]
+
+            meeting = {
+                'name': event['summary'],
+                'start': event['start'].get('dateTime', event['start'].get('date')),
+                'link': self.get_link(event.get('description', ''))
+            }
+            return meeting
+
+    def open_link(self):
+
+        link = self.meet.get('link', None)
+        if link:
+            webbrowser.open(link)
+        else:
+            print('No link in meeting')
+
+    def enter_meet(self):
+        """ enter next meeting """
+        if self.meet:
+            # parse date from calendar
+            start_time = datetime.strptime(self.meet['start'][:-6], '%Y-%m-%dT%H:%M:%S')
+            print(f'Entering {self.meet["name"]} at {start_time:%H:%M} \n{self.meet["link"]}')
+            wait = start_time - datetime.now()
+            print(f'Time left: {str(wait)[:-7]}')
+            sleep(wait.seconds - 30)
+            self.open_link()
+            print('Entered')
+        else:
+            print('No upcoming meetings')
+
+
+if __name__ == '__main__':
+    calendar = CalendarProcessor()
+    calendar.enter_meet()
