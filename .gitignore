@@ -142,3 +142,4 @@ credentials.json
 token.json
 .idea
 /test.py
+output/
