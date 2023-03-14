@@ -143,3 +143,5 @@ token.json
 .idea
 /test.py
 output/
+recording_test.py
+config.toml
